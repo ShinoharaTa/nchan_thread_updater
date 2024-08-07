@@ -1,10 +1,16 @@
-import { nip78post, send, getUpdatedChannels } from "./Nostr.js";
+import {
+  nip78post,
+  send,
+  getUpdatedChannels,
+  getUpdatedChannelsV2,
+} from "./Nostr.js";
 import cron from "node-cron";
 
 const main = async () => {
-  const result = await getUpdatedChannels();
-  JSON.stringify(result);
+  // const result = await getUpdatedChannels();
+  const result = await getUpdatedChannelsV2();
   await nip78post("nchan_list", JSON.stringify(result));
+  // console.log(JSON.stringify(result));
   console.log("exit");
 };
 

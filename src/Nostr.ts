@@ -192,3 +192,78 @@ export async function getUpdatedChannels() {
     .sort((a, b) => b.latest_update - a.latest_update)
     .slice(0, 50);
 }
+
+export async function getUpdatedChannelsV2() {
+  const recentChannels = await pool.list(RELAYS, [
+    {
+      kinds: [Kind.ChannelCreation],
+      limit: 1000,
+    },
+  ]);
+  const ids = recentChannels.map((item) => item.id);
+  const chunkIds: string[][] = [];
+  for (let i = 0; i < ids.length; i += 20) {
+    chunkIds.push(ids.slice(i, i + 20));
+  }
+  const channelMessages: Event<Kind>[] = [];
+  for (const chunked of chunkIds) {
+    const filter = chunked.map((id: string) => {
+      return {
+        kinds: [Kind.ChannelMessage],
+        "#e": [id],
+        limit: 3,
+      };
+    });
+    const messages = await pool.list(RELAYS, filter);
+    messages.map((item) => channelMessages.push(item));
+  }
+
+  const formattedChannelList: {
+    id: string;
+    author: string;
+    latest_update: number;
+    name: string;
+    events: {
+      content: string;
+      pubkey: string;
+      created_at: number;
+    }[];
+  }[] = [];
+  for (const channel of recentChannels) {
+    const channelDetail = channel.content
+      ? JSON.parse(channel.content)
+      : { name: "" };
+
+    const messages = channelMessages
+      .filter((message) => {
+        const root = message.tags.find(
+          (tag) => tag.includes("e") && tag.includes("root"),
+        );
+        return root ? channel.id === root[1] : false;
+      })
+      .sort((a, b) => b.created_at - a.created_at)
+      .slice(0, 3)
+      .map((item) => {
+        return {
+          content: item.content,
+          pubkey: item.pubkey,
+          created_at: item.created_at,
+        };
+      });
+    const content = {
+      id: channel.id,
+      author: channel.pubkey,
+      latest_update: channel.created_at,
+      name: channelDetail.name,
+      events: messages,
+    };
+    if (content.events.length > 0) {
+      if (content.latest_update < content.events[0].created_at)
+        content.latest_update = content.events[0].created_at;
+    }
+    formattedChannelList.push(content);
+  }
+  return formattedChannelList
+    .sort((a, b) => b.latest_update - a.latest_update)
+    .slice(0, 50);
+}
