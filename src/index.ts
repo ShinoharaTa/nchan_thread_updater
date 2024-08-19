@@ -127,9 +127,8 @@ async function getUpdatedChannelsV2() {
     }
     channelList.push(content);
   }
-  return channelList
-    .sort((a, b) => b.latest_update - a.latest_update)
-    .slice(0, 50);
+  channelList.sort((a, b) => b.latest_update - a.latest_update);
+  return;
 }
 
 const sub = pool.sub(RELAYS, [{ kinds: [40, 41, 42], since: currUnixtime() }]);
@@ -142,8 +141,8 @@ sub.on("event", (ev) => {
 });
 
 const main = async () => {
-  const result = await getUpdatedChannelsV2();
-  await nip78post("nchan_list", JSON.stringify(result));
+  await getUpdatedChannelsV2();
+  await nip78post("nchan_list", JSON.stringify(channelList.slice(0, 50)));
   console.log("exit");
   close();
 };
