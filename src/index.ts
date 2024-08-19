@@ -56,19 +56,22 @@ const nip78post = async (storeName: string, content: string) => {
   });
 };
 
-const channelList: {
-  id: string;
-  author: string;
-  latest_update: number;
-  name: string;
-  events: {
-    content: string;
-    pubkey: string;
-    created_at: number;
-  }[];
-}[] = [];
+const channelList = new Map<
+  string,
+  {
+    id: string;
+    author: string;
+    latest_update: number;
+    name: string;
+    events: {
+      content: string;
+      pubkey: string;
+      created_at: number;
+    }[];
+  }
+>();
 
-async function getUpdatedChannelsV2() {
+async function channelListUpdate() {
   const recentChannels = await pool.list(RELAYS, [
     {
       kinds: [Kind.ChannelCreation],
@@ -125,31 +128,89 @@ async function getUpdatedChannelsV2() {
       if (content.latest_update < content.events[0].created_at)
         content.latest_update = content.events[0].created_at;
     }
-    channelList.push(content);
+    channelList.set(channel.id, content);
   }
-  channelList.sort((a, b) => b.latest_update - a.latest_update);
   return;
 }
 
-const sub = pool.sub(RELAYS, [{ kinds: [40, 41, 42], since: currUnixtime() }]);
-sub.on("event", (ev) => {
-  try {
-    console.log(ev);
-  } catch (ex) {
-    console.error(ex);
-  }
-});
-
 const main = async () => {
-  await getUpdatedChannelsV2();
-  await nip78post("nchan_list", JSON.stringify(channelList.slice(0, 50)));
-  console.log("exit");
-  close();
+  console.log("init start");
+  await channelListUpdate();
+  const sortedChannelList = Array.from(channelList.values())
+    .sort((a, b) => b.latest_update - a.latest_update)
+    .slice(0, 50);
+  nip78post("nchan_list", JSON.stringify(sortedChannelList));
+  console.log("init ok");
+
+  console.log("start sub");
+  const sub = pool.sub(RELAYS, [
+    { kinds: [40, 41, 42], since: currUnixtime() },
+  ]);
+  sub.on("event", (ev) => {
+    try {
+      if (ev.kind === 40) {
+        const existChannel = channelList.get(ev.id);
+        // channel がすでにあったら無視する
+        if (existChannel) return;
+
+        const content = JSON.parse(ev.content);
+        const newChannel = {
+          id: ev.id,
+          author: ev.pubkey,
+          latest_update: ev.created_at,
+          name: content.name,
+          events: [],
+        };
+        channelList.set(ev.id, newChannel);
+      }
+      if (ev.kind === 41) {
+      }
+      if (ev.kind === 42) {
+        const root = ev.tags.find(
+          (tag) => tag.includes("e") && tag.includes("root"),
+        );
+        // root の Channel id が取れなかったらぶち○す
+        if (!root) return;
+
+        const rootId = root[1];
+        const channel = channelList.get(rootId);
+        // channel がなかったらぶち○す
+        if (!channel) return;
+
+        const newEvent = {
+          content: ev.content,
+          pubkey: ev.pubkey,
+          created_at: ev.created_at,
+        };
+        channel.events.push(newEvent);
+        channel.events = channel.events
+          .sort((a, b) => b.created_at - a.created_at)
+          .slice(0, 3);
+        channel.latest_update = newEvent.created_at;
+
+        channelList.set(rootId, channel);
+      }
+      const sortedChannelList = Array.from(channelList.values())
+        .sort((a, b) => b.latest_update - a.latest_update)
+        .slice(0, 50);
+      nip78post("nchan_list", JSON.stringify(sortedChannelList));
+    } catch (ex) {
+      console.error(ex);
+    }
+  });
 };
 
-// cron.schedule("*/5 * * * *", async () => {
-//   main();
-// });
+cron.schedule("0 * * * *", async () => {
+  await channelListUpdate();
+  const sortedChannelList = Array.from(channelList.values())
+    .sort((a, b) => b.latest_update - a.latest_update)
+    .slice(0, 50);
+  nip78post("nchan_list", JSON.stringify(sortedChannelList));
+});
 
-// send("んちゃんねるThread更新システム起動");
+cron.schedule("35 */2 * * *", async () => {
+  process.exit();
+});
+
+send("んちゃんねるThread更新システム起動");
 main();
