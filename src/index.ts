@@ -188,9 +188,7 @@ const main = async () => {
         channelList.set(ev.id, newChannel);
       }
       if (ev.kind === 41) {
-        const root = ev.tags.find(
-          (tag) => tag.includes("e") && tag.includes("root"),
-        );
+        const root = ev.tags.find((tag) => tag.includes("e"));
         // root の Channel id が取れなかったらぶち○す
         if (!root) return;
 
