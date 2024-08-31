@@ -16,9 +16,6 @@ const RELAYS = [
 ];
 
 const pool = new SimplePool();
-const close = () => {
-  pool.close(RELAYS);
-};
 
 const send = async (content: string, targetEvent: Event | null = null) => {
   const created = targetEvent ? targetEvent.created_at + 1 : currUnixtime();
