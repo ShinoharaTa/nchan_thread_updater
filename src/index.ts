@@ -104,7 +104,6 @@ async function channelListUpdate() {
     });
     const result = await pool.list(RELAYS, filter);
     for (const id of chunked) {
-      const channel = channelList.get(id);
       const metadata = result
         .filter((message) => {
           const root = message.tags.find((tag) => tag.includes("e"));
@@ -113,6 +112,7 @@ async function channelListUpdate() {
         .sort((a, b) => b.created_at - a.created_at)?.[0];
       if (metadata) {
         const updateContent = JSON.parse(metadata.content);
+        const channel = channelList.get(id);
         channel.name = updateContent.name;
         if (channel.latest_update < metadata.created_at)
           channel.latest_update = metadata.created_at;
@@ -131,7 +131,6 @@ async function channelListUpdate() {
     });
     const result = await pool.list(RELAYS, filter);
     for (const id of chunked) {
-      const channel = channelList.get(id);
       const messages = result
         .filter((message) => {
           const root = message.tags.find((tag) => tag.includes("e"));
@@ -147,6 +146,7 @@ async function channelListUpdate() {
           };
         });
       if (messages.length > 0) {
+        const channel = channelList.get(id);
         if (channel.latest_update < messages[0].created_at)
           channel.latest_update = messages[0].created_at;
         channel.events = channel.events.concat(messages);
