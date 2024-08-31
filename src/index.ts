@@ -75,12 +75,52 @@ async function channelListUpdate() {
       limit: 1000,
     },
   ]);
-  const ids = recentChannels.map((item) => item.id);
+  const ids = [];
+  for (const channel of recentChannels) {
+    const parsedContent = JSON.parse(channel.content);
+    const newChannel = {
+      id: channel.id,
+      author: channel.pubkey,
+      latest_update: channel.created_at,
+      name: parsedContent.name,
+      events: [],
+    };
+    channelList.set(channel.id, newChannel);
+    ids.push(channel.id);
+  }
   const chunkIds: string[][] = [];
   for (let i = 0; i < ids.length; i += 20) {
     chunkIds.push(ids.slice(i, i + 20));
   }
-  const channelMessages: Event<Kind>[] = [];
+  for (const chunked of chunkIds) {
+    const filter = chunked.map((id: string) => {
+      const channel = channelList.get(id);
+      return {
+        kinds: [Kind.ChannelMetadata],
+        "#e": [id],
+        authors: [channel.author],
+        limit: 1,
+      };
+    });
+    const result = await pool.list(RELAYS, filter);
+    for (const id of chunked) {
+      const channel = channelList.get(id);
+      const metadata = result
+        .filter((message) => {
+          const root = message.tags.find((tag) => tag.includes("e"));
+          return root ? id === root[1] : false;
+        })
+        .sort((a, b) => b.created_at - a.created_at)?.[0];
+      if (metadata) {
+        const updateContent = JSON.parse(metadata.content);
+        channel.name = updateContent.name;
+        if (channel.latest_update < metadata.created_at)
+          channel.latest_update = metadata.created_at;
+        channelList.set(id, channel);
+      }
+    }
+  }
+
   for (const chunked of chunkIds) {
     const filter = chunked.map((id: string) => {
       return {
@@ -89,43 +129,30 @@ async function channelListUpdate() {
         limit: 3,
       };
     });
-    const messages = await pool.list(RELAYS, filter);
-    messages.map((item) => channelMessages.push(item));
-  }
-
-  for (const channel of recentChannels) {
-    const channelDetail = channel.content
-      ? JSON.parse(channel.content)
-      : { name: "" };
-
-    const messages = channelMessages
-      .filter((message) => {
-        const root = message.tags.find(
-          (tag) => tag.includes("e") && tag.includes("root"),
-        );
-        return root ? channel.id === root[1] : false;
-      })
-      .sort((a, b) => b.created_at - a.created_at)
-      .slice(0, 3)
-      .map((item) => {
-        return {
-          content: item.content,
-          pubkey: item.pubkey,
-          created_at: item.created_at,
-        };
-      });
-    const content = {
-      id: channel.id,
-      author: channel.pubkey,
-      latest_update: channel.created_at,
-      name: channelDetail.name,
-      events: messages,
-    };
-    if (content.events.length > 0) {
-      if (content.latest_update < content.events[0].created_at)
-        content.latest_update = content.events[0].created_at;
+    const result = await pool.list(RELAYS, filter);
+    for (const id of chunked) {
+      const channel = channelList.get(id);
+      const messages = result
+        .filter((message) => {
+          const root = message.tags.find((tag) => tag.includes("e"));
+          return root ? id === root[1] : false;
+        })
+        .sort((a, b) => b.created_at - a.created_at)
+        .slice(0, 3)
+        .map((item) => {
+          return {
+            content: item.content,
+            pubkey: item.pubkey,
+            created_at: item.created_at,
+          };
+        });
+      if (messages.length > 0) {
+        if (channel.latest_update < messages[0].created_at)
+          channel.latest_update = messages[0].created_at;
+        channel.events = channel.events.concat(messages);
+        channelList.set(id, channel);
+      }
     }
-    channelList.set(channel.id, content);
   }
   return;
 }
@@ -161,6 +188,24 @@ const main = async () => {
         channelList.set(ev.id, newChannel);
       }
       if (ev.kind === 41) {
+        const root = ev.tags.find(
+          (tag) => tag.includes("e") && tag.includes("root"),
+        );
+        // root の Channel id が取れなかったらぶち○す
+        if (!root) return;
+
+        const rootId = root[1];
+        const channel = channelList.get(rootId);
+        // channel がなかったらぶち○す
+        if (!channel) return;
+        // チャンネル所有者が一致しなければぶち○す
+        if (channel.author !== ev.pubkey) return;
+
+        const parsedContent = JSON.parse(ev.content);
+        channel.name = parsedContent.name;
+        channel.latest_update = ev.created_at;
+
+        channelList.set(rootId, channel);
       }
       if (ev.kind === 42) {
         const root = ev.tags.find(
@@ -197,17 +242,17 @@ const main = async () => {
   });
 };
 
-cron.schedule("0 * * * *", async () => {
-  await channelListUpdate();
-  const sortedChannelList = Array.from(channelList.values())
-    .sort((a, b) => b.latest_update - a.latest_update)
-    .slice(0, 50);
-  nip78post("nchan_list", JSON.stringify(sortedChannelList));
-});
+// cron.schedule("0 * * * *", async () => {
+//   await channelListUpdate();
+//   const sortedChannelList = Array.from(channelList.values())
+//     .sort((a, b) => b.latest_update - a.latest_update)
+//     .slice(0, 50);
+//   nip78post("nchan_list", JSON.stringify(sortedChannelList));
+// });
 
-cron.schedule("35 */2 * * *", async () => {
+cron.schedule("35 */8 * * *", async () => {
   process.exit();
 });
 
-send("んちゃんねるThread更新システム起動");
+send("n-chan thread system auto update.");
 main();
