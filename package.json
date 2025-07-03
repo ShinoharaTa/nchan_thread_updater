@@ -10,7 +10,10 @@
   "scripts": {
     "build": "tsc",
     "start": "tsc && node --inspect dist/index.js",
-    "dev": "tsc && node dist/index.js --dev"
+    "dev": "tsc && node dist/index.js --dev",
+    "refresh": "tsc && node dist/index.js refresh",
+    "refresh:force": "tsc && node dist/index.js refresh --force",
+    "help": "tsc && node dist/index.js --help"
   },
   "dependencies": {
     "@babel/core": "^7.23.7",
@@ -19,12 +22,20 @@
     "@types/node": "^20.4.5",
     "@types/node-cron": "^3.0.8",
     "axios": "^1.4.0",
+    "better-sqlite3": "^9.2.2",
     "biome": "^0.2.2",
+    "cors": "^2.8.5",
     "date-fns": "^2.30.0",
     "dotenv": "^16.1.3",
+    "express": "^4.18.2",
     "node-cron": "^3.0.2",
     "nostr-tools": "1.11.1",
     "ts-node": "^10.9.1",
     "websocket-polyfill": "^0.0.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.8",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21"
   }
 }
