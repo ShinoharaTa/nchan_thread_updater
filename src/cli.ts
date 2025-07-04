@@ -40,6 +40,8 @@ export function parseCliArgs(): RefreshOptions {
       options.until = parseDateToUnix(dateStr);
       continue;
     }
+    
+
   }
 
   return options;
@@ -87,9 +89,9 @@ Nostr Channel Thread List System
   refresh                           # リフレッシュモード
 
 オプション:
-  since=YYYY-MM-DD                  # 開始日時を指定
-  until=YYYY-MM-DD                  # 終了日時を指定
-  --force                           # 既存データを上書きして強制更新
+  since=YYYY-MM-DD                  # 開始日時を指定（since～現在まで取得）
+  until=YYYY-MM-DD                  # 終了日時を指定（最古～untilまで取得）
+  --force                           # 全データを削除して強制更新
 
 日時形式:
   YYYY-MM-DD                        # 例: 2025-01-01
@@ -97,11 +99,12 @@ Nostr Channel Thread List System
   Unix timestamp                    # 例: 1735689600
 
 使用例:
-  npm start                                           # 通常のAPIサーバー起動
+  npm start                                           # APIサーバー起動（初回はデータなし）
   npm run refresh                                     # 全件リフレッシュ
-  npm run refresh -- since=2025-01-01                # 2025年1月1日以降
-  npm run refresh -- since=2025-01-01 until=2025-01-31  # 1月分のみ
-  npm run refresh -- since=1735689600 --force        # Unix時刻指定+強制更新
+  npm run refresh -- since=2025-01-01                # 2025年1月1日以降を取得
+  npm run refresh -- until=2025-01-31                # 2025年1月31日までを取得
+  npm run refresh -- since=2025-01-01 until=2025-01-31  # 1月分のみ取得
+  npm run refresh -- since=1735689600 --force        # Unix時刻指定+強制更新（全データ削除）
 `);
 }
 

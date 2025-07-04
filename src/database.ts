@@ -55,6 +55,9 @@ class ChannelDatabase {
         created_at INTEGER NOT NULL
       )
     `);
+    
+    // 既存テーブルの構造を確認し、必要に応じてカラムを追加
+    this.migrateTableStructure();
 
     // チャンネルメッセージテーブル
     this.db.exec(`
@@ -121,6 +124,39 @@ class ChannelDatabase {
       CREATE INDEX IF NOT EXISTS idx_meta_history_kind 
       ON channel_meta_history(kind, created_at DESC)
     `);
+  }
+
+  // テーブル構造のマイグレーション
+  private migrateTableStructure() {
+    try {
+      // channelsテーブルが存在するかチェック
+      const tableExists = this.db.prepare(`
+        SELECT name FROM sqlite_master 
+        WHERE type='table' AND name='channels'
+      `).get();
+      
+      if (tableExists) {
+        // テーブルが存在する場合、カラム構造をチェック
+        const pragmaResult = this.db.prepare("PRAGMA table_info(channels)").all() as any[];
+        const hasLatestUpdate = pragmaResult.some(column => column.name === 'latest_update');
+        
+        if (!hasLatestUpdate) {
+          console.log('Adding latest_update column to existing channels table...');
+          this.db.exec('ALTER TABLE channels ADD COLUMN latest_update INTEGER NOT NULL DEFAULT 0');
+          
+          // 既存データのlatest_updateをcreated_atで更新
+          this.db.exec('UPDATE channels SET latest_update = created_at WHERE latest_update = 0');
+          console.log('Migration completed: latest_update column added to existing table');
+        } else {
+          console.log('latest_update column already exists in channels table');
+        }
+      } else {
+        console.log('channels table does not exist yet, will be created with latest_update column');
+      }
+    } catch (error) {
+      console.error('Migration error:', error);
+      console.error('Migration error details:', error.message);
+    }
   }
 
   // チャンネルの保存・更新
@@ -277,17 +313,88 @@ class ChannelDatabase {
 
   // チャンネル統計情報
   getChannelStats(): any {
-    const stmt = this.db.prepare(`
-      SELECT 
-        COUNT(*) as total_channels,
-        AVG(latest_update) as avg_last_update,
-        MIN(created_at) as oldest_channel,
-        MAX(created_at) as newest_channel,
-        (SELECT COUNT(*) FROM channel_messages) as total_messages,
-        (SELECT COUNT(*) FROM channel_meta_history) as total_meta_changes
-    `);
-    
-    return stmt.get();
+    try {
+      // まずテーブル構造を確認
+      const tableExists = this.db.prepare(`
+        SELECT name FROM sqlite_master 
+        WHERE type='table' AND name='channels'
+      `).get();
+      
+      if (!tableExists) {
+        console.log('channels table does not exist, returning empty stats');
+        return {
+          total_channels: 0,
+          avg_last_update: 0,
+          oldest_channel: 0,
+          newest_channel: 0,
+          total_messages: 0,
+          total_meta_changes: 0
+        };
+      }
+      
+      // カラムの存在を確認
+      const pragmaResult = this.db.prepare("PRAGMA table_info(channels)").all() as any[];
+      const hasLatestUpdate = pragmaResult.some(column => column.name === 'latest_update');
+      
+      if (!hasLatestUpdate) {
+        console.log('latest_update column missing, attempting migration...');
+        this.migrateTableStructure();
+      }
+      
+      const stmt = this.db.prepare(`
+        SELECT 
+          COUNT(*) as total_channels,
+          COALESCE(AVG(latest_update), 0) as avg_last_update,
+          COALESCE(MIN(created_at), 0) as oldest_channel,
+          COALESCE(MAX(created_at), 0) as newest_channel,
+          (SELECT COUNT(*) FROM channel_messages) as total_messages,
+          (SELECT COUNT(*) FROM channel_meta_history) as total_meta_changes
+      `);
+      
+      const result = stmt.get() as any;
+      
+      // 結果を安全に処理
+      return {
+        total_channels: result?.total_channels || 0,
+        avg_last_update: result?.avg_last_update || 0,
+        oldest_channel: result?.oldest_channel || 0,
+        newest_channel: result?.newest_channel || 0,
+        total_messages: result?.total_messages || 0,
+        total_meta_changes: result?.total_meta_changes || 0
+      };
+    } catch (error) {
+      console.error('Error in getChannelStats:', error);
+      // エラーが発生した場合はデフォルト値を返す
+      return {
+        total_channels: 0,
+        avg_last_update: 0,
+        oldest_channel: 0,
+        newest_channel: 0,
+        total_messages: 0,
+        total_meta_changes: 0
+      };
+    }
+  }
+
+  // 全チャンネル削除
+  deleteAllChannels(): number {
+    const stmt = this.db.prepare('DELETE FROM channels');
+    const result = stmt.run();
+    return result.changes || 0;
+  }
+
+  // 全メッセージ削除
+  deleteAllMessages(): number {
+    const stmt = this.db.prepare('DELETE FROM channel_messages');
+    const result = stmt.run();
+    return result.changes || 0;
+  }
+
+  // 全メタデータ履歴削除
+  deleteAllMetaHistory(): number {
+    const stmt = this.db.prepare('DELETE FROM channel_meta_history');
+    const result = stmt.run();
+    return result.changes || 0;
   }
 
   // リフレッシュ用: 期間内のチャンネル削除

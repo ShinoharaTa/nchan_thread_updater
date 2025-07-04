@@ -101,14 +101,25 @@ async function refreshChannelData(options: RefreshOptions): Promise<void> {
   const since = options.since;
   const until = options.until;
   
-  console.log(`Period: ${since ? new Date(since * 1000).toISOString() : 'beginning'} to ${until ? new Date(until * 1000).toISOString() : 'now'}`);
+  // 期間の表示ロジックを明確化
+  let periodDescription = '';
+  if (since && until) {
+    periodDescription = `${new Date(since * 1000).toISOString()} to ${new Date(until * 1000).toISOString()}`;
+  } else if (since) {
+    periodDescription = `${new Date(since * 1000).toISOString()} to now`;
+  } else if (until) {
+    periodDescription = `beginning to ${new Date(until * 1000).toISOString()}`;
+  } else {
+    periodDescription = 'beginning to now (all data)';
+  }
+  console.log(`Period: ${periodDescription}`);
   
-  // 強制モードの場合、期間内のデータを削除
+  // 強制モードの場合、全データを削除
   if (options.force) {
-    console.log("🗑️  Force mode: Clearing existing data in period...");
-    const deletedChannels = db.deleteChannelsInPeriod(since, until);
-    const deletedMessages = db.deleteMessagesInPeriod(since, until);
-    const deletedMeta = db.deleteMetaHistoryInPeriod(since, until);
+    console.log("🗑️  Force mode: Clearing ALL existing data...");
+    const deletedChannels = db.deleteAllChannels();
+    const deletedMessages = db.deleteAllMessages();
+    const deletedMeta = db.deleteAllMetaHistory();
     console.log(`Deleted: ${deletedChannels} channels, ${deletedMessages} messages, ${deletedMeta} meta records`);
   }
 
@@ -124,6 +135,25 @@ async function refreshChannelData(options: RefreshOptions): Promise<void> {
 
   const channels = await pool.list(RELAYS, [channelFilter]);
   console.log(`Found ${channels.length} channel creation events`);
+  
+  // デバッグ：期間外のデータがあるかチェック
+  if (since || until) {
+    const outOfRangeChannels = channels.filter(channel => {
+      if (since && channel.created_at < since) return true;
+      if (until && channel.created_at > until) return true;
+      return false;
+    });
+    
+    if (outOfRangeChannels.length > 0) {
+      console.log(`⚠️  WARNING: Found ${outOfRangeChannels.length} channels outside specified period:`);
+      outOfRangeChannels.slice(0, 5).forEach(channel => {
+        console.log(`   - ${channel.id}: created_at=${channel.created_at} (${new Date(channel.created_at * 1000).toISOString()})`);
+      });
+      if (outOfRangeChannels.length > 5) {
+        console.log(`   ... and ${outOfRangeChannels.length - 5} more`);
+      }
+    }
+  }
 
   let processedChannels = 0;
   let skippedChannels = 0;
@@ -131,6 +161,18 @@ async function refreshChannelData(options: RefreshOptions): Promise<void> {
   // チャンネル作成イベントの処理
   for (const channel of channels) {
     try {
+      // 期間チェック：指定期間外のデータはスキップ
+      if (since && channel.created_at < since) {
+        console.log(`Skipping channel ${channel.id} (created_at: ${channel.created_at} < since: ${since})`);
+        skippedChannels++;
+        continue;
+      }
+      if (until && channel.created_at > until) {
+        console.log(`Skipping channel ${channel.id} (created_at: ${channel.created_at} > until: ${until})`);
+        skippedChannels++;
+        continue;
+      }
+
       // 強制モードでない場合、既存チャンネルをスキップ
       if (!options.force && db.channelExistsInPeriod(channel.id, since, until)) {
         skippedChannels++;
@@ -182,6 +224,14 @@ async function refreshChannelData(options: RefreshOptions): Promise<void> {
   let processedMeta = 0;
   for (const metadata of metadataEvents) {
     try {
+      // 期間チェック：指定期間外のデータはスキップ
+      if (since && metadata.created_at < since) {
+        continue;
+      }
+      if (until && metadata.created_at > until) {
+        continue;
+      }
+
       const root = metadata.tags.find((tag) => tag[0] === "e");
       if (!root) continue;
       
@@ -234,6 +284,14 @@ async function refreshChannelData(options: RefreshOptions): Promise<void> {
   let processedMessages = 0;
   for (const message of messages) {
     try {
+      // 期間チェック：指定期間外のデータはスキップ
+      if (since && message.created_at < since) {
+        continue;
+      }
+      if (until && message.created_at > until) {
+        continue;
+      }
+
       const root = message.tags.find((tag) => tag[0] === "e" && tag[3] === "root");
       if (!root) continue;
 
@@ -386,8 +444,11 @@ async function incrementalChannelUpdate() {
 }
 
 // 完全同期関数（初回起動時のみ）
+
+
+// 従来の完全同期（現在は非推奨、大きなデータセット用）
 async function fullChannelUpdate() {
-  console.log("Starting full channel update...");
+  console.log("⚠️  Starting FULL channel update (not recommended for large datasets)...");
   
   const recentChannels = await pool.list(RELAYS, [
     {
@@ -522,7 +583,7 @@ async function fullChannelUpdate() {
   console.log(`Full sync completed. Processed ${channelIds.length} channels.`);
 }
 
-const runServerMode = async () => {
+const runServerMode = async (options: RefreshOptions = { mode: 'server' }) => {
   const api = new ChannelAPI(db, API_PORT);
   
   console.log("Channel Thread List System Starting...");
@@ -532,9 +593,9 @@ const runServerMode = async () => {
   const existingChannels = db.getAllChannels(1);
   
   if (existingChannels.length === 0) {
-    // 初回起動時は完全同期
-    console.log("No existing data found. Performing full sync...");
-    await fullChannelUpdate();
+    // 初回起動時は同期せず、APIサーバーのみ起動
+    console.log("No existing data found. Starting API server without initial sync.");
+    console.log("Use 'npm run refresh' to populate data manually.");
   } else {
     // 既存データがある場合は増分同期
     console.log("Existing data found. Performing incremental sync...");
@@ -701,7 +762,7 @@ const main = async () => {
       db.close();
       process.exit(0);
     } else {
-      await runServerMode();
+      await runServerMode(options);
     }
   } catch (error) {
     console.error("❌ Fatal error:", error);

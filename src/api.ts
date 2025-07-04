@@ -125,8 +125,18 @@ export class ChannelAPI {
   }
 
   private setupRoutes() {
+    // ================================
+    // 公開対象APIエンドポイント（3つ）
+    // ================================
+    
     // ヘルスチェック
     this.app.get('/health', (req, res) => {
+      // キャッシュ制御ヘッダーの設定（1分間キャッシュ）
+      res.set({
+        'Cache-Control': 'public, max-age=60, s-maxage=60',
+        'Vary': 'Accept-Encoding'
+      });
+      
       res.json({ 
         status: 'ok', 
         timestamp: new Date().toISOString(),
@@ -134,7 +144,7 @@ export class ChannelAPI {
       });
     });
 
-    // チャンネル一覧取得
+    // チャンネル一覧取得（メインAPI）
     this.app.get('/channels', (req, res) => {
       try {
         const sort = req.query.sort as 'latest' | 'oldest' | 'created_new' | 'created_old' || 'latest';
@@ -162,6 +172,13 @@ export class ChannelAPI {
           channels = this.db.getAllChannels(limit, sort);
         }
 
+        // キャッシュ制御ヘッダーの設定（1分間キャッシュ）
+        res.set({
+          'Cache-Control': 'public, max-age=60, s-maxage=60',
+          'Vary': 'Accept-Encoding',
+          'ETag': `"channels-${sort}-${limit}-${withMessages}-${Date.now().toString(36)}"`
+        });
+
         res.json({
           data: channels,
           meta: {
@@ -181,7 +198,12 @@ export class ChannelAPI {
       }
     });
 
-    // 特定チャンネル詳細取得
+    // ================================
+    // 非公開エンドポイント（将来的に公開検討）
+    // ================================
+    
+    // 特定チャンネル詳細取得 - 現在公開対象外
+    /*
     this.app.get('/channels/:id', (req, res) => {
       try {
         const { id } = req.params;
@@ -201,6 +223,13 @@ export class ChannelAPI {
         }
 
         const messages = this.db.getChannelMessages(id, 10);
+        
+        // キャッシュ制御ヘッダーの設定（3分間キャッシュ）
+        res.set({
+          'Cache-Control': 'public, max-age=180, s-maxage=180',
+          'Vary': 'Accept-Encoding',
+          'ETag': `"channel-${id}-${channel.latest_update}"`
+        });
         
         res.json({
           data: {
@@ -223,8 +252,10 @@ export class ChannelAPI {
         });
       }
     });
+    */
 
-    // チャンネルメッセージ一覧
+    // チャンネルメッセージ一覧 - 現在公開対象外
+    /*
     this.app.get('/channels/:id/messages', (req, res) => {
       try {
         const { id } = req.params;
@@ -251,6 +282,13 @@ export class ChannelAPI {
 
         const messages = this.db.getChannelMessages(id, limit);
         
+        // キャッシュ制御ヘッダーの設定（2分間キャッシュ）
+        res.set({
+          'Cache-Control': 'public, max-age=120, s-maxage=120',
+          'Vary': 'Accept-Encoding',
+          'ETag': `"messages-${id}-${limit}-${messages.length}"`
+        });
+        
         res.json({
           data: messages,
           meta: {
@@ -268,8 +306,10 @@ export class ChannelAPI {
         });
       }
     });
+    */
 
-    // チャンネルメタデータ履歴
+    // チャンネルメタデータ履歴 - 現在公開対象外
+    /*
     this.app.get('/channels/:id/history', (req, res) => {
       try {
         const { id } = req.params;
@@ -296,6 +336,13 @@ export class ChannelAPI {
 
         const history = this.db.getChannelMetaHistory(id, limit);
         
+        // キャッシュ制御ヘッダーの設定（10分間キャッシュ、履歴は変更頻度が低い）
+        res.set({
+          'Cache-Control': 'public, max-age=600, s-maxage=600',
+          'Vary': 'Accept-Encoding',
+          'ETag': `"history-${id}-${limit}-${history.length}"`
+        });
+        
         res.json({
           data: history,
           meta: {
@@ -313,12 +360,20 @@ export class ChannelAPI {
         });
       }
     });
+    */
 
-    // 統計情報
+    // 統計情報（3つ目の公開API）
     this.app.get('/stats', (req, res) => {
       try {
         const stats = this.db.getChannelStats();
         const lastSync = this.db.getLastSyncTime();
+        
+        // キャッシュ制御ヘッダーの設定（5分間キャッシュ）
+        res.set({
+          'Cache-Control': 'public, max-age=300, s-maxage=300',
+          'Vary': 'Accept-Encoding',
+          'ETag': `"stats-${lastSync}"`
+        });
         
         res.json({
           data: {
