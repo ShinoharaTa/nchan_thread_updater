@@ -13,10 +13,13 @@ dotenv.config();
 
 const HEX: string = process.env.HEX ?? "";
 const API_PORT: number = parseInt(process.env.API_PORT || "3000");
+const HAS_POSTING_KEY: boolean = !!HEX;
 
 if (!HEX) {
-  console.error("HEX private key is required");
-  process.exit(1);
+  console.log("⚠️  No HEX private key provided - running in read-only mode");
+  console.log("   NIP-78 posting and system notifications will be disabled");
+} else {
+  console.log("🔑 HEX private key found - posting features enabled");
 }
 
 const RELAYS = [
@@ -30,6 +33,11 @@ const pool = new SimplePool();
 const db = new ChannelDatabase();
 
 const send = async (content: string, targetEvent: Event | null = null) => {
+  if (!HAS_POSTING_KEY) {
+    console.log("📝 Send skipped (read-only mode):", content);
+    return;
+  }
+  
   const created = targetEvent ? targetEvent.created_at + 1 : currUnixtime();
   const ev: EventTemplate<Kind.Text> = {
     kind: Kind.Text,
@@ -51,6 +59,11 @@ const send = async (content: string, targetEvent: Event | null = null) => {
 };
 
 const nip78post = async (storeName: string, content: string) => {
+  if (!HAS_POSTING_KEY) {
+    console.log("🗃️  NIP-78 post skipped (read-only mode):", storeName);
+    return;
+  }
+  
   const tags = [["d", storeName]];
   const ev = {
     kind: 30078,
@@ -68,6 +81,10 @@ const nip78post = async (storeName: string, content: string) => {
 // デバウンス処理用
 let updateTimeout: NodeJS.Timeout | null = null;
 const debouncedNip78Update = () => {
+  if (!HAS_POSTING_KEY) {
+    return; // 読み取り専用モードでは何もしない
+  }
+  
   if (updateTimeout) {
     clearTimeout(updateTimeout);
   }
