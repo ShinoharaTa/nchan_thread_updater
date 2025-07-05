@@ -131,10 +131,12 @@ export class ChannelAPI {
     
     // ヘルスチェック
     this.app.get('/health', (req, res) => {
-      // キャッシュ制御ヘッダーの設定（1分間キャッシュ）
+      // Cloudflare用キャッシュ制御ヘッダーの設定（1分間キャッシュ）
       res.set({
-        'Cache-Control': 'public, max-age=60, s-maxage=60',
-        'Vary': 'Accept-Encoding'
+        'Cache-Control': 'public, max-age=60, s-maxage=60, stale-while-revalidate=30',
+        'Vary': 'Accept-Encoding',
+        'CDN-Cache-Control': 'max-age=60',
+        'Cloudflare-CDN-Cache-Control': 'max-age=60'
       });
       
       res.json({ 
@@ -172,11 +174,13 @@ export class ChannelAPI {
           channels = this.db.getAllChannels(limit, sort);
         }
 
-        // キャッシュ制御ヘッダーの設定（1分間キャッシュ）
+        // Cloudflare用キャッシュ制御ヘッダーの設定（1分間キャッシュ）
         res.set({
-          'Cache-Control': 'public, max-age=60, s-maxage=60',
-          'Vary': 'Accept-Encoding',
-          'ETag': `"channels-${sort}-${limit}-${withMessages}-${Date.now().toString(36)}"`
+          'Cache-Control': 'public, max-age=60, s-maxage=60, stale-while-revalidate=30',
+          'Vary': 'Accept-Encoding, Accept',
+          'ETag': `"channels-${sort}-${limit}-${withMessages}-${Date.now().toString(36)}"`,
+          'CDN-Cache-Control': 'max-age=60',
+          'Cloudflare-CDN-Cache-Control': 'max-age=60'
         });
 
         res.json({
@@ -368,11 +372,13 @@ export class ChannelAPI {
         const stats = this.db.getChannelStats();
         const lastSync = this.db.getLastSyncTime();
         
-        // キャッシュ制御ヘッダーの設定（5分間キャッシュ）
+        // Cloudflare用キャッシュ制御ヘッダーの設定（5分間キャッシュ）
         res.set({
-          'Cache-Control': 'public, max-age=300, s-maxage=300',
-          'Vary': 'Accept-Encoding',
-          'ETag': `"stats-${lastSync}"`
+          'Cache-Control': 'public, max-age=300, s-maxage=300, stale-while-revalidate=60',
+          'Vary': 'Accept-Encoding, Accept',
+          'ETag': `"stats-${lastSync}"`,
+          'CDN-Cache-Control': 'max-age=300',
+          'Cloudflare-CDN-Cache-Control': 'max-age=300'
         });
         
         res.json({

@@ -260,6 +260,77 @@ curl "http://localhost:3000/stats"
 - **レスポンス時間**: インデックス付きで高速クエリ
 - **リフレッシュ**: 期間指定で必要なデータのみ取得
 
+## ☁️ **Cloudflare Tunnel設定ガイド**
+
+### **キャッシュ設定**
+
+Cloudflare Tunnelを使用している場合、以下のCache Rulesを設定することで90-98%のリクエスト削減が期待できます。
+
+#### **1. Cache Rulesの作成**
+
+Cloudflare Dashboard → **Caching** → **Configuration** → **Cache Rules** → **Create Cache Rule**
+
+#### **2. 推奨設定**
+
+| エンドポイント | キャッシュ時間 | 設定内容 |
+|---------------|---------------|----------|
+| `/health` | **1分** | ヘルスチェック用 |
+| `/channels` | **1分** | チャンネル一覧用 |
+| `/stats` | **5分** | 統計情報用 |
+
+#### **3. 具体的な設定例**
+
+**ヘルスチェック用**
+```
+Rule name: Health Check Cache
+Field: URI Path
+Operator: equals
+Value: /health
+Cache: Cache everything
+Edge cache TTL: 1 minute
+```
+
+**チャンネル一覧用**
+```
+Rule name: Channels List Cache
+Field: URI Path
+Operator: equals
+Value: /channels
+Cache: Cache everything
+Edge cache TTL: 1 minute
+```
+
+**統計情報用**
+```
+Rule name: Stats Cache
+Field: URI Path
+Operator: equals
+Value: /stats
+Cache: Cache everything
+Edge cache TTL: 5 minutes
+```
+
+#### **4. 期待される効果**
+
+- **リクエスト削減**: 90-98%のリクエストがキャッシュから提供
+- **レスポンス速度**: 平均50-100msの高速応答
+- **サーバー負荷**: 大幅な負荷軽減
+- **コスト削減**: データ転送量の削減
+
+#### **5. キャッシュ無効化**
+
+開発時や緊急時は以下の方法でキャッシュを無効化できます：
+
+**Cloudflare Dashboard**
+- Cache Rulesで一時的に無効化
+- **Caching** → **Configuration** → **Purge Cache**
+
+**API呼び出し時**
+```bash
+# キャッシュを無効化してリクエスト
+curl -H "Cache-Control: no-cache" https://your-domain.com/channels
+```
+
 ## 🚨 **トラブルシューティング**
 
 ### システム停止後のデータ補完
